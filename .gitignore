@@ -5,3 +5,4 @@ frontend/dist/
 backend/uploads/
 *.log
 .npm-cache/
+backend/backend/uploads/
