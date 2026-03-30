@@ -1,0 +1,10 @@
+node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/target/
+backend/uploads/
+.git/
+.idea/
+.npm-cache/
+startup.log
+backend/startup.log

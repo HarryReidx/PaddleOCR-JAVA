@@ -1,0 +1,43 @@
+server:
+  port: 18080
+
+spring:
+  application:
+    name: paddleocr-demo
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://172.24.0.47:3306/tsingyun_platform_daas?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: root
+    password: 123456
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+ocr:
+  upload-dir: backend/uploads
+  queue-workers: 1
+  allowed-origins:
+    - http://localhost:5173
+    - http://127.0.0.1:5173
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.example.paddleocr: INFO
