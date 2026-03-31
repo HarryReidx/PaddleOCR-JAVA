@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 
 const apiBase = '/api/ocr'
 const selectedFile = ref(null)
@@ -7,6 +7,12 @@ const originalFile = ref(null)
 const previewUrl = ref('')
 const selectedEngine = ref('paddleocr-cpu')
 const activeImageEffect = ref('original')
+const previewStageRef = ref(null)
+const previewImageRef = ref(null)
+const engineDropdownRef = ref(null)
+const engineMenuOpen = ref(false)
+const panelCollapsed = ref(true)
+const sliderActive = ref(false)
 const submitting = ref(false)
 const cancelling = ref(false)
 const applyingEffect = ref(false)
@@ -20,6 +26,8 @@ let toastTimer
 let refreshTimer
 let effectTimer
 let effectSequence = 0
+const previewImageBox = reactive({ left: 0, top: 0, width: 0, height: 0 })
+const occludePosition = reactive({ x: 0.72, y: 0.24 })
 
 const engineOptions = [
   { value: 'paddleocr-cpu', label: 'PaddleOCR-CPU', description: '' },
@@ -40,7 +48,7 @@ const imageEffectOptions = [
 ]
 
 const defaultEffectIntensity = {
-  blur: 36,
+  blur: 8,
   skew: 30,
   distort: 42,
   occlude: 30,
@@ -73,12 +81,30 @@ const prettyJsonOutput = computed(() => {
 const parsedFieldEntries = computed(() => Object.entries(currentTask.value?.parsedFields || {}))
 const showSyncResultLoading = computed(() => submitting.value && currentTask.value?.mode !== 'ASYNC')
 const currentEffectOption = computed(() => imageEffectOptions.find((item) => item.value === activeImageEffect.value) || imageEffectOptions[0])
+const selectedEngineOption = computed(() => engineOptions.find((item) => item.value === selectedEngine.value) || engineOptions[0])
 const currentEffectPercent = computed(() => effectIntensity[activeImageEffect.value] ?? 0)
+const previewPanelStyle = computed(() => ({
+  opacity: sliderActive.value ? 0.18 : 1,
+}))
 const previewStatusLabel = computed(() => {
   if (applyingEffect.value) {
-    return `正在生成${imageEffectLabel(activeImageEffect.value)}`
+    return `当前状态：正在生成${imageEffectLabel(activeImageEffect.value)}`
   }
-  return `当前效果：${imageEffectLabel(activeImageEffect.value)}`
+  return `当前状态：${imageEffectLabel(activeImageEffect.value)}`
+})
+const occludePreviewStyle = computed(() => {
+  if (activeImageEffect.value !== 'occlude' || !previewImageBox.width || !previewImageBox.height) {
+    return {}
+  }
+  const { width, height } = getOccludeBlockSize(previewImageBox.width, previewImageBox.height, intensityRatio('occlude'))
+  const centerX = clamp(previewImageBox.width * occludePosition.x, width / 2, previewImageBox.width - width / 2)
+  const centerY = clamp(previewImageBox.height * occludePosition.y, height / 2, previewImageBox.height - height / 2)
+  return {
+    width: `${width}px`,
+    height: `${height}px`,
+    left: `${previewImageBox.left + centerX - width / 2}px`,
+    top: `${previewImageBox.top + centerY - height / 2}px`,
+  }
 })
 
 function engineLabel(engineType) {
@@ -87,6 +113,33 @@ function engineLabel(engineType) {
 
 function imageEffectLabel(effectType) {
   return imageEffectLabelMap[effectType] || effectType || '-'
+}
+
+function toggleEngineMenu() {
+  engineMenuOpen.value = !engineMenuOpen.value
+}
+
+function selectEngine(value) {
+  selectedEngine.value = value
+  engineMenuOpen.value = false
+}
+
+function handleEngineMenuKeydown(event) {
+  if (event.key === 'Escape') {
+    engineMenuOpen.value = false
+    return
+  }
+
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    toggleEngineMenu()
+  }
+}
+
+function handleDocumentPointerDown(event) {
+  if (engineDropdownRef.value && !engineDropdownRef.value.contains(event.target)) {
+    engineMenuOpen.value = false
+  }
 }
 
 function setToast(message) {
@@ -107,6 +160,7 @@ function revokePreviewUrl() {
 function updatePreview(file) {
   revokePreviewUrl()
   previewUrl.value = file ? URL.createObjectURL(file) : ''
+  void nextTick(syncPreviewImageBox)
 }
 
 function buildDerivedName(fileName, effect) {
@@ -165,6 +219,102 @@ function clamp(value, min, max) {
 
 function intensityRatio(effect) {
   return clamp((effectIntensity[effect] ?? 0) / 100, 0, 1)
+}
+
+function resetOccludePosition() {
+  occludePosition.x = 0.72
+  occludePosition.y = 0.24
+}
+
+function getOccludeBlockSize(width, height, ratio) {
+  return {
+    width: Math.max(40, Math.round(width * (0.08 + ratio * 0.34))),
+    height: Math.max(28, Math.round(height * (0.06 + ratio * 0.22))),
+  }
+}
+
+function syncPreviewImageBox() {
+  const stage = previewStageRef.value
+  const image = previewImageRef.value
+  if (!stage || !image) {
+    previewImageBox.left = 0
+    previewImageBox.top = 0
+    previewImageBox.width = 0
+    previewImageBox.height = 0
+    return
+  }
+
+  const stageRect = stage.getBoundingClientRect()
+  const naturalWidth = image.naturalWidth || 0
+  const naturalHeight = image.naturalHeight || 0
+  if (!stageRect.width || !stageRect.height || !naturalWidth || !naturalHeight) {
+    previewImageBox.left = 0
+    previewImageBox.top = 0
+    previewImageBox.width = 0
+    previewImageBox.height = 0
+    return
+  }
+
+  const scale = Math.min(stageRect.width / naturalWidth, stageRect.height / naturalHeight)
+  const width = naturalWidth * scale
+  const height = naturalHeight * scale
+  previewImageBox.width = width
+  previewImageBox.height = height
+  previewImageBox.left = (stageRect.width - width) / 2
+  previewImageBox.top = (stageRect.height - height) / 2
+}
+
+function updateOccludePosition(clientX, clientY) {
+  if (!previewStageRef.value || !previewImageBox.width || !previewImageBox.height) {
+    return
+  }
+  const stageRect = previewStageRef.value.getBoundingClientRect()
+  const x = clamp(clientX - stageRect.left - previewImageBox.left, 0, previewImageBox.width)
+  const y = clamp(clientY - stageRect.top - previewImageBox.top, 0, previewImageBox.height)
+  occludePosition.x = previewImageBox.width ? x / previewImageBox.width : occludePosition.x
+  occludePosition.y = previewImageBox.height ? y / previewImageBox.height : occludePosition.y
+  scheduleActiveEffectRebuild()
+}
+
+function handleOccludePointerMove(event) {
+  updateOccludePosition(event.clientX, event.clientY)
+}
+
+function stopOccludeDrag() {
+  window.removeEventListener('pointermove', handleOccludePointerMove)
+  window.removeEventListener('pointerup', stopOccludeDrag)
+}
+
+function beginOccludeDrag(event) {
+  if (activeImageEffect.value !== 'occlude' || submitting.value || applyingEffect.value) {
+    return
+  }
+  updateOccludePosition(event.clientX, event.clientY)
+  window.addEventListener('pointermove', handleOccludePointerMove)
+  window.addEventListener('pointerup', stopOccludeDrag)
+}
+
+function handlePreviewStagePointerDown(event) {
+  if (activeImageEffect.value !== 'occlude') {
+    return
+  }
+  beginOccludeDrag(event)
+}
+
+function handlePreviewImageLoad() {
+  syncPreviewImageBox()
+}
+
+function togglePreviewPanel() {
+  panelCollapsed.value = !panelCollapsed.value
+}
+
+function handleSliderPress() {
+  sliderActive.value = true
+}
+
+function handleSliderRelease() {
+  sliderActive.value = false
 }
 
 function addWaterStains(context, width, height, ratio) {
@@ -288,15 +438,14 @@ async function buildEffectFile(file, effect) {
     case 'occlude': {
       ;({ canvas, context } = createCanvasContext(image.width, image.height))
       context.drawImage(image, 0, 0, image.width, image.height)
-      const blockCount = 1 + Math.round(ratio * 3)
-      for (let index = 0; index < blockCount; index += 1) {
-        const coverWidth = Math.max(40, Math.round(image.width * (0.08 + ratio * 0.34)))
-        const coverHeight = Math.max(28, Math.round(image.height * (0.06 + ratio * 0.22)))
-        const x = image.width - coverWidth - 18 - index * Math.round(coverWidth * 0.32)
-        const y = 18 + index * Math.round(coverHeight * 0.52)
-        context.fillStyle = `rgba(24, 32, 44, ${0.48 + ratio * 0.44})`
-        context.fillRect(x, y, coverWidth, coverHeight)
-      }
+      const { width: coverWidth, height: coverHeight } = getOccludeBlockSize(image.width, image.height, ratio)
+      const centerX = clamp(image.width * occludePosition.x, coverWidth / 2, image.width - coverWidth / 2)
+      const centerY = clamp(image.height * occludePosition.y, coverHeight / 2, image.height - coverHeight / 2)
+      const x = centerX - coverWidth / 2
+      const y = centerY - coverHeight / 2
+      const coverAlpha = 0.22 + ratio * 0.78
+      context.fillStyle = `rgba(0, 0, 0, ${coverAlpha})`
+      context.fillRect(x, y, coverWidth, coverHeight)
       break
     }
     case 'stain': {
@@ -416,6 +565,8 @@ function handleFileChange(event) {
   originalFile.value = file || null
   selectedFile.value = file || null
   activeImageEffect.value = 'original'
+  panelCollapsed.value = true
+  resetOccludePosition()
   updatePreview(file || null)
 }
 
@@ -558,6 +709,8 @@ function connectSse() {
 }
 
 onMounted(async () => {
+  window.addEventListener('resize', syncPreviewImageBox)
+  document.addEventListener('pointerdown', handleDocumentPointerDown)
   await refreshAll()
   connectSse()
 })
@@ -567,6 +720,10 @@ onBeforeUnmount(() => {
   clearTimeout(effectTimer)
   clearInterval(refreshTimer)
   revokePreviewUrl()
+  stopOccludeDrag()
+  handleSliderRelease()
+  window.removeEventListener('resize', syncPreviewImageBox)
+  document.removeEventListener('pointerdown', handleDocumentPointerDown)
   eventSource?.close()
 })
 </script>
@@ -610,17 +767,43 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="engine-toolbar">
-            <label class="engine-field">
+            <div class="engine-field">
               <span>识别引擎</span>
-              <select v-model="selectedEngine" class="engine-select">
-                <option v-for="item in engineOptions" :key="item.value" :value="item.value">
-                  {{ item.label }}
-                </option>
-              </select>
-            </label>
-            <div class="engine-hint">
-              <strong>{{ engineLabel(selectedEngine) }}</strong>
-              <span>{{ engineOptions.find((item) => item.value === selectedEngine)?.description }}</span>
+              <div
+                ref="engineDropdownRef"
+                class="engine-select-shell"
+                :class="{ open: engineMenuOpen }"
+              >
+                <button
+                  type="button"
+                  class="engine-select-trigger"
+                  :aria-expanded="engineMenuOpen"
+                  aria-haspopup="listbox"
+                  @click="toggleEngineMenu"
+                  @keydown="handleEngineMenuKeydown"
+                >
+                  <span class="engine-select-value">{{ selectedEngineOption.label }}</span>
+                  <span class="engine-select-caret" aria-hidden="true"></span>
+                </button>
+                <div v-if="engineMenuOpen" class="engine-select-menu" role="listbox">
+                  <button
+                    v-for="item in engineOptions"
+                    :key="item.value"
+                    type="button"
+                    class="engine-select-option"
+                    :class="{ active: selectedEngine === item.value }"
+                    role="option"
+                    :aria-selected="selectedEngine === item.value"
+                    @click="selectEngine(item.value)"
+                  >
+                    {{ item.label }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="engine-hint engine-panel-card">
+              <strong>{{ selectedEngineOption.label }}</strong>
+              <span>{{ selectedEngineOption.description || '支持同步识别、异步队列与结果对比' }}</span>
             </div>
           </div>
 
@@ -633,62 +816,123 @@ onBeforeUnmount(() => {
           </label>
 
           <div v-if="previewUrl" class="preview-box">
-            <div class="preview-toolbar">
-              <div class="preview-status-group">
-                <div class="preview-effect-chip">{{ previewStatusLabel }}</div>
-                <div v-if="currentEffectOption.adjustable" class="preview-effect-meta">
-                  {{ currentEffectOption.sliderLabel }} · {{ currentEffectPercent }}%
-                </div>
-                <p v-else class="preview-effect-hint">{{ currentEffectOption.hint }}</p>
-              </div>
-              <div class="preview-tools" role="tablist" aria-label="图片特效">
+            <div
+              ref="previewStageRef"
+              class="preview-stage"
+              :class="{ 'is-occlude-mode': activeImageEffect === 'occlude' }"
+              @pointerdown="handlePreviewStagePointerDown"
+            >
+              <img
+                ref="previewImageRef"
+                class="preview-image"
+                :src="previewUrl"
+                alt="上传预览"
+                @load="handlePreviewImageLoad"
+              />
+
+              <div
+                class="preview-overlay-panel"
+                :class="{ collapsed: panelCollapsed, dimmed: sliderActive }"
+                :style="previewPanelStyle"
+                @pointerdown.stop
+              >
+                <template v-if="!panelCollapsed">
+                  <div class="preview-panel-head">
+                    <div class="preview-status-group">
+                      <div class="preview-effect-chip">{{ previewStatusLabel }}</div>
+                    </div>
+                    <button
+                      type="button"
+                      class="preview-collapse-toggle"
+                      :aria-label="panelCollapsed ? '展开面板' : '收起面板'"
+                      @click="togglePreviewPanel"
+                    >
+                      <span class="preview-collapse-icon" :class="{ collapsed: panelCollapsed }">
+                        <svg viewBox="0 0 20 20" aria-hidden="true">
+                          <rect x="3" y="4" width="5" height="12" rx="2.2"></rect>
+                          <path d="M12 6.5 15.5 10 12 13.5"></path>
+                        </svg>
+                      </span>
+                    </button>
+                  </div>
+
+                  <div class="preview-tools" role="tablist" aria-label="图片特效">
+                    <button
+                      v-for="item in imageEffectOptions"
+                      :key="item.value"
+                      type="button"
+                      class="preview-tool"
+                      :class="{ active: activeImageEffect === item.value }"
+                      :title="item.hint"
+                      :disabled="submitting || applyingEffect"
+                      role="tab"
+                      :aria-selected="activeImageEffect === item.value"
+                      @click="applyImageEffect(item.value)"
+                    >
+                      <span class="preview-tool-label">{{ item.label }}</span>
+                    </button>
+                  </div>
+
+                  <div class="preview-control-panel">
+                    <template v-if="currentEffectOption.adjustable">
+                      <div class="preview-slider-shell">
+                        <span class="preview-slider-edge">0%</span>
+                        <input
+                          :id="`effect-intensity-${activeImageEffect}`"
+                          v-model.number="effectIntensity[activeImageEffect]"
+                          class="preview-range"
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="1"
+                          :disabled="submitting || applyingEffect"
+                          @input="scheduleActiveEffectRebuild"
+                          @pointerdown="handleSliderPress"
+                          @pointerup="handleSliderRelease"
+                          @pointercancel="handleSliderRelease"
+                          @blur="handleSliderRelease"
+                        />
+                        <span class="preview-slider-edge current">{{ currentEffectPercent }}%</span>
+                      </div>
+                      <button
+                        type="button"
+                        class="preview-reset-button"
+                        :disabled="submitting || applyingEffect"
+                        @click="resetActiveEffect"
+                      >
+                        恢复默认
+                      </button>
+                    </template>
+                    <div v-else class="preview-static-state">当前为原图预览，不做额外处理。</div>
+                  </div>
+                </template>
                 <button
-                  v-for="item in imageEffectOptions"
-                  :key="item.value"
+                  v-else
                   type="button"
-                  class="preview-tool"
-                  :class="{ active: activeImageEffect === item.value }"
-                  :title="item.hint"
-                  :disabled="submitting || applyingEffect"
-                  role="tab"
-                  :aria-selected="activeImageEffect === item.value"
-                  @click="applyImageEffect(item.value)"
+                  class="preview-collapse-toggle preview-collapse-toggle-collapsed"
+                  :aria-label="panelCollapsed ? '展开面板' : '收起面板'"
+                  @click="togglePreviewPanel"
                 >
-                  <span class="preview-tool-label">{{ item.label }}</span>
+                  <span class="preview-collapse-icon collapsed">
+                    <svg viewBox="0 0 20 20" aria-hidden="true">
+                      <rect x="3" y="4" width="5" height="12" rx="2.2"></rect>
+                      <path d="M12 6.5 15.5 10 12 13.5"></path>
+                    </svg>
+                  </span>
                 </button>
               </div>
-            </div>
 
-            <div v-if="currentEffectOption.adjustable" class="preview-control-panel">
-              <div class="preview-control-head">
-                <label class="preview-slider-field" :for="`effect-intensity-${activeImageEffect}`">
-                  <span class="preview-slider-title">{{ currentEffectOption.sliderLabel }}</span>
-                  <span class="preview-slider-hint">{{ currentEffectOption.hint }}</span>
-                </label>
-                <span class="preview-slider-value">{{ currentEffectPercent }}%</span>
-              </div>
-              <input
-                :id="`effect-intensity-${activeImageEffect}`"
-                v-model.number="effectIntensity[activeImageEffect]"
-                class="preview-range"
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                :disabled="submitting || applyingEffect"
-                @input="scheduleActiveEffectRebuild"
-              />
               <button
+                v-if="activeImageEffect === 'occlude'"
                 type="button"
-                class="preview-reset-button"
+                class="occlude-anchor"
+                :style="occludePreviewStyle"
                 :disabled="submitting || applyingEffect"
-                @click="resetActiveEffect"
+                @pointerdown.stop.prevent="beginOccludeDrag"
               >
-                恢复默认强度
+                <span class="occlude-anchor-label">拖拽遮挡</span>
               </button>
             </div>
-
-            <img :src="previewUrl" alt="上传预览" />
           </div>
 
           <div class="actions">
