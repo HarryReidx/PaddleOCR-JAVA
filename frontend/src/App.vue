@@ -29,13 +29,14 @@ const engineOptions = [
 ]
 
 const imageEffectOptions = [
-  { value: 'original', label: '原图', adjustable: false, sliderLabel: '' },
-  { value: 'blur', label: '模糊', adjustable: true, sliderLabel: '模糊度' },
-  { value: 'skew', label: '倾斜', adjustable: true, sliderLabel: '倾斜度' },
-  { value: 'distort', label: '失真', adjustable: true, sliderLabel: '失真度' },
-  { value: 'occlude', label: '遮挡', adjustable: true, sliderLabel: '遮挡度' },
-  { value: 'stain', label: '水渍', adjustable: true, sliderLabel: '水渍度' },
-  { value: 'wrinkle', label: '褶皱', adjustable: true, sliderLabel: '褶皱度' },
+  { value: 'original', label: '原图', adjustable: false, sliderLabel: '', hint: '未处理底图' },
+  { value: 'blur', label: '模糊', adjustable: true, sliderLabel: '模糊强度', hint: '高斯模糊半径' },
+  { value: 'skew', label: '倾斜', adjustable: true, sliderLabel: '倾斜角度', hint: '绕中心轻微旋转' },
+  { value: 'distort', label: '失真', adjustable: true, sliderLabel: '波纹强度', hint: '正弦错位扭曲' },
+  { value: 'occlude', label: '遮挡', adjustable: true, sliderLabel: '遮挡面积', hint: '模拟异物遮挡' },
+  { value: 'stain', label: '水渍', adjustable: true, sliderLabel: '水渍痕迹', hint: '水痕与晕开' },
+  { value: 'glare', label: '反光', adjustable: true, sliderLabel: '反光强度', hint: '镜面高光与眩光' },
+  { value: 'wrinkle', label: '褶皱', adjustable: true, sliderLabel: '折痕深浅', hint: '纸张折痕阴影' },
 ]
 
 const defaultEffectIntensity = {
@@ -44,6 +45,7 @@ const defaultEffectIntensity = {
   distort: 42,
   occlude: 30,
   stain: 46,
+  glare: 38,
   wrinkle: 34,
 }
 
@@ -166,8 +168,8 @@ function intensityRatio(effect) {
 }
 
 function addWaterStains(context, width, height, ratio) {
-  const stainCount = 2 + Math.round(ratio * 4)
-  const baseAlpha = 0.12 + ratio * 0.18
+  const stainCount = 2 + Math.round(ratio * 5)
+  const baseAlpha = 0.1 + ratio * 0.28
   for (let index = 0; index < stainCount; index += 1) {
     const cx = width * (0.18 + ((index * 23) % 57) / 100)
     const cy = height * (0.16 + ((index * 19) % 49) / 100)
@@ -182,8 +184,8 @@ function addWaterStains(context, width, height, ratio) {
     context.fill()
   }
 
-  context.strokeStyle = `rgba(149, 165, 185, ${0.12 + ratio * 0.12})`
-  context.lineWidth = 2 + ratio * 4
+  context.strokeStyle = `rgba(149, 165, 185, ${0.1 + ratio * 0.22})`
+  context.lineWidth = 1.5 + ratio * 6
   context.lineCap = 'round'
   for (let index = 0; index < stainCount; index += 1) {
     context.beginPath()
@@ -202,16 +204,44 @@ function addWaterStains(context, width, height, ratio) {
   }
 }
 
+function addGlare(context, width, height, ratio) {
+  context.save()
+  context.globalCompositeOperation = 'screen'
+  const strength = 0.1 + ratio * 0.62
+  const cx = width * (0.52 + ratio * 0.12)
+  const cy = height * (0.14 + (1 - ratio) * 0.06)
+  const r = Math.min(width, height) * (0.22 + ratio * 0.48)
+  const hotspot = context.createRadialGradient(cx, cy, r * 0.02, cx, cy, r)
+  hotspot.addColorStop(0, `rgba(255,255,255,${strength})`)
+  hotspot.addColorStop(0.22, `rgba(255,248,238,${strength * 0.62})`)
+  hotspot.addColorStop(1, 'rgba(255,255,255,0)')
+  context.fillStyle = hotspot
+  context.fillRect(0, 0, width, height)
+
+  const streakAlpha = strength * 0.48
+  const streak = context.createLinearGradient(-width * 0.05, height * 0.28, width * 1.08, height * 0.72)
+  streak.addColorStop(0, 'rgba(255,255,255,0)')
+  streak.addColorStop(0.44, `rgba(255,255,255,${streakAlpha * 0.35})`)
+  streak.addColorStop(0.5, `rgba(255,255,252,${streakAlpha})`)
+  streak.addColorStop(0.56, `rgba(255,255,255,${streakAlpha * 0.35})`)
+  streak.addColorStop(1, 'rgba(255,255,255,0)')
+  context.fillStyle = streak
+  context.fillRect(0, 0, width, height)
+  context.restore()
+}
+
 function addWrinkles(context, width, height, ratio) {
-  const foldCount = 2 + Math.round(ratio * 4)
+  const foldCount = 2 + Math.round(ratio * 5)
   for (let index = 0; index < foldCount; index += 1) {
-    const x = width * (0.16 + index * (0.62 / Math.max(1, foldCount - 1)))
-    const foldWidth = 12 + ratio * 18
+    const x = width * (0.14 + index * (0.64 / Math.max(1, foldCount - 1)))
+    const foldWidth = 10 + ratio * 26
     const gradient = context.createLinearGradient(x - foldWidth, 0, x + foldWidth, 0)
+    const edge = 0.09 + ratio * 0.2
+    const hi = 0.11 + ratio * 0.22
     gradient.addColorStop(0, 'rgba(255,255,255,0)')
-    gradient.addColorStop(0.35, `rgba(90, 105, 128, ${0.10 + ratio * 0.14})`)
-    gradient.addColorStop(0.5, `rgba(255,255,255, ${0.10 + ratio * 0.16})`)
-    gradient.addColorStop(0.65, `rgba(90, 105, 128, ${0.08 + ratio * 0.12})`)
+    gradient.addColorStop(0.35, `rgba(90, 105, 128, ${edge})`)
+    gradient.addColorStop(0.5, `rgba(255,255,255, ${hi})`)
+    gradient.addColorStop(0.65, `rgba(90, 105, 128, ${edge * 0.85})`)
     gradient.addColorStop(1, 'rgba(255,255,255,0)')
     context.fillStyle = gradient
     context.fillRect(x - foldWidth, 0, foldWidth * 2, height)
@@ -228,13 +258,15 @@ async function buildEffectFile(file, effect) {
   switch (effect) {
     case 'blur': {
       ;({ canvas, context } = createCanvasContext(image.width, image.height))
-      context.filter = `blur(${1 + ratio * 10}px)`
+      const px = 0.35 + ratio * 22
+      context.filter = `blur(${px}px)`
       context.drawImage(image, 0, 0, image.width, image.height)
       context.filter = 'none'
       break
     }
     case 'skew': {
-      const angle = (ratio * 18 - 9) * (Math.PI / 180)
+      const maxDeg = 14
+      const angle = (ratio * 2 * maxDeg - maxDeg) * (Math.PI / 180)
       const padding = Math.ceil(Math.max(image.width, image.height) * 0.14)
       ;({ canvas, context } = createCanvasContext(image.width + padding * 2, image.height + padding * 2))
       context.translate(canvas.width / 2, canvas.height / 2)
@@ -245,8 +277,8 @@ async function buildEffectFile(file, effect) {
     }
     case 'distort': {
       ;({ canvas, context } = createCanvasContext(image.width, image.height))
-      const amplitude = 4 + ratio * 22
-      const frequency = 14 + (1 - ratio) * 18
+      const amplitude = 2 + ratio * 36
+      const frequency = 16 + (1 - ratio) * 22
       for (let y = 0; y < image.height; y += 2) {
         const offset = Math.round(Math.sin(y / frequency) * amplitude)
         context.drawImage(image, 0, y, image.width, 2, offset, y, image.width, 2)
@@ -256,13 +288,13 @@ async function buildEffectFile(file, effect) {
     case 'occlude': {
       ;({ canvas, context } = createCanvasContext(image.width, image.height))
       context.drawImage(image, 0, 0, image.width, image.height)
-      const blockCount = 1 + Math.round(ratio * 2)
+      const blockCount = 1 + Math.round(ratio * 3)
       for (let index = 0; index < blockCount; index += 1) {
-        const coverWidth = Math.max(48, Math.round(image.width * (0.12 + ratio * 0.22)))
-        const coverHeight = Math.max(32, Math.round(image.height * (0.08 + ratio * 0.14)))
-        const x = image.width - coverWidth - 18 - index * Math.round(coverWidth * 0.35)
-        const y = 18 + index * Math.round(coverHeight * 0.55)
-        context.fillStyle = `rgba(24, 32, 44, ${0.62 + ratio * 0.26})`
+        const coverWidth = Math.max(40, Math.round(image.width * (0.08 + ratio * 0.34)))
+        const coverHeight = Math.max(28, Math.round(image.height * (0.06 + ratio * 0.22)))
+        const x = image.width - coverWidth - 18 - index * Math.round(coverWidth * 0.32)
+        const y = 18 + index * Math.round(coverHeight * 0.52)
+        context.fillStyle = `rgba(24, 32, 44, ${0.48 + ratio * 0.44})`
         context.fillRect(x, y, coverWidth, coverHeight)
       }
       break
@@ -271,6 +303,12 @@ async function buildEffectFile(file, effect) {
       ;({ canvas, context } = createCanvasContext(image.width, image.height))
       context.drawImage(image, 0, 0, image.width, image.height)
       addWaterStains(context, image.width, image.height, ratio)
+      break
+    }
+    case 'glare': {
+      ;({ canvas, context } = createCanvasContext(image.width, image.height))
+      context.drawImage(image, 0, 0, image.width, image.height)
+      addGlare(context, image.width, image.height, ratio)
       break
     }
     case 'wrinkle': {
@@ -599,43 +637,54 @@ onBeforeUnmount(() => {
               <div class="preview-status-group">
                 <div class="preview-effect-chip">{{ previewStatusLabel }}</div>
                 <div v-if="currentEffectOption.adjustable" class="preview-effect-meta">
-                  {{ currentEffectOption.sliderLabel }} {{ currentEffectPercent }}%
+                  {{ currentEffectOption.sliderLabel }} · {{ currentEffectPercent }}%
                 </div>
+                <p v-else class="preview-effect-hint">{{ currentEffectOption.hint }}</p>
               </div>
-              <div class="preview-tools">
+              <div class="preview-tools" role="tablist" aria-label="图片特效">
                 <button
                   v-for="item in imageEffectOptions"
                   :key="item.value"
+                  type="button"
                   class="preview-tool"
                   :class="{ active: activeImageEffect === item.value }"
+                  :title="item.hint"
                   :disabled="submitting || applyingEffect"
+                  role="tab"
+                  :aria-selected="activeImageEffect === item.value"
                   @click="applyImageEffect(item.value)"
                 >
-                  {{ item.label }}
+                  <span class="preview-tool-label">{{ item.label }}</span>
                 </button>
               </div>
             </div>
 
             <div v-if="currentEffectOption.adjustable" class="preview-control-panel">
-              <label class="preview-slider-field">
-                <span>{{ currentEffectOption.sliderLabel }}</span>
-                <input
-                  v-model.number="effectIntensity[activeImageEffect]"
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  :disabled="submitting || applyingEffect"
-                  @input="scheduleActiveEffectRebuild"
-                />
-              </label>
-              <strong>{{ currentEffectPercent }}%</strong>
+              <div class="preview-control-head">
+                <label class="preview-slider-field" :for="`effect-intensity-${activeImageEffect}`">
+                  <span class="preview-slider-title">{{ currentEffectOption.sliderLabel }}</span>
+                  <span class="preview-slider-hint">{{ currentEffectOption.hint }}</span>
+                </label>
+                <span class="preview-slider-value">{{ currentEffectPercent }}%</span>
+              </div>
+              <input
+                :id="`effect-intensity-${activeImageEffect}`"
+                v-model.number="effectIntensity[activeImageEffect]"
+                class="preview-range"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                :disabled="submitting || applyingEffect"
+                @input="scheduleActiveEffectRebuild"
+              />
               <button
+                type="button"
                 class="preview-reset-button"
                 :disabled="submitting || applyingEffect"
                 @click="resetActiveEffect"
               >
-                重置强度
+                恢复默认强度
               </button>
             </div>
 
