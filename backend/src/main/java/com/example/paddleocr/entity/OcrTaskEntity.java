@@ -12,12 +12,14 @@ public class OcrTaskEntity {
     private Long id;
     private String taskNo;
     private String mode;
+    private String engineType;
     private String imageName;
     private String imagePath;
     private String status;
     private String documentType;
     private String ocrText;
     private String parsedFieldsJson;
+    private String outputJson;
     private String errorMessage;
     private LocalDateTime startedAt;
     private LocalDateTime finishedAt;
@@ -30,6 +32,8 @@ public class OcrTaskEntity {
     public void setTaskNo(String taskNo) { this.taskNo = taskNo; }
     public String getMode() { return mode; }
     public void setMode(String mode) { this.mode = mode; }
+    public String getEngineType() { return engineType; }
+    public void setEngineType(String engineType) { this.engineType = engineType; }
     public String getImageName() { return imageName; }
     public void setImageName(String imageName) { this.imageName = imageName; }
     public String getImagePath() { return imagePath; }
@@ -42,6 +46,8 @@ public class OcrTaskEntity {
     public void setOcrText(String ocrText) { this.ocrText = ocrText; }
     public String getParsedFieldsJson() { return parsedFieldsJson; }
     public void setParsedFieldsJson(String parsedFieldsJson) { this.parsedFieldsJson = parsedFieldsJson; }
+    public String getOutputJson() { return outputJson; }
+    public void setOutputJson(String outputJson) { this.outputJson = outputJson; }
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
     public LocalDateTime getStartedAt() { return startedAt; }

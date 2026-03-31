@@ -6,7 +6,6 @@ import com.example.paddleocr.mapper.OcrNotificationMapper;
 import com.example.paddleocr.model.OcrNotificationResponse;
 import com.example.paddleocr.service.OcrNotificationService;
 import com.example.paddleocr.support.JsonSupport;
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +39,11 @@ public class OcrNotificationServiceImpl implements OcrNotificationService {
         for (SseEmitter emitter : emitters) {
             try {
                 emitter.send(SseEmitter.event().name(eventType).data(response));
-            } catch (IOException ex) {
-                emitter.complete();
+            } catch (Exception ex) {
+                try {
+                    emitter.complete();
+                } catch (Exception ignored) {
+                }
                 emitters.remove(emitter);
             }
         }
@@ -53,6 +55,7 @@ public class OcrNotificationServiceImpl implements OcrNotificationService {
         emitters.add(emitter);
         emitter.onCompletion(() -> emitters.remove(emitter));
         emitter.onTimeout(() -> emitters.remove(emitter));
+        emitter.onError((ex) -> emitters.remove(emitter));
         return emitter;
     }
 

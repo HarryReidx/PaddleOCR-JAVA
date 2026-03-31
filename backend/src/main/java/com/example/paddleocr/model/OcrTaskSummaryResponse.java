@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 public class OcrTaskSummaryResponse {
     private String taskNo;
     private String mode;
+    private String engineType;
     private String status;
     private String imageName;
     private String documentType;
@@ -15,6 +16,8 @@ public class OcrTaskSummaryResponse {
     public void setTaskNo(String taskNo) { this.taskNo = taskNo; }
     public String getMode() { return mode; }
     public void setMode(String mode) { this.mode = mode; }
+    public String getEngineType() { return engineType; }
+    public void setEngineType(String engineType) { this.engineType = engineType; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public String getImageName() { return imageName; }

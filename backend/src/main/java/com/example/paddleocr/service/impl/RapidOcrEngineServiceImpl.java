@@ -11,36 +11,41 @@ import org.springframework.stereotype.Service;
 @Service
 public class RapidOcrEngineServiceImpl implements OcrEngineService {
 
-    private final DocumentFieldExtractor extractor;
-    private final Object lock = new Object();
-    private volatile Object engine;
+    private static final String MODEL_NAME = "ONNX_PPOCR_V3";
 
+    private final DocumentFieldExtractor extractor;
+    private final Class<?> modelClass;
+    private final Object model;
+    private final Class<?> engineClass;
+    private final Method getInstanceMethod;
+    private final ThreadLocal<Object> engineHolder;
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public RapidOcrEngineServiceImpl(DocumentFieldExtractor extractor) {
         this.extractor = extractor;
+        try {
+            this.modelClass = Class.forName("io.github.mymonstercat.Model");
+            this.model = Enum.valueOf((Class<Enum>) modelClass.asSubclass(Enum.class), MODEL_NAME);
+            this.engineClass = Class.forName("io.github.mymonstercat.ocr.InferenceEngine");
+            this.getInstanceMethod = engineClass.getMethod("getInstance", modelClass);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to initialize RapidOCR metadata", ex);
+        }
+        this.engineHolder = ThreadLocal.withInitial(this::createEngine);
     }
 
     @Override
     public OcrExecutionResult recognize(Path imagePath) {
-        synchronized (lock) {
-            Object engineInstance = getEngine();
-            String text = runOcr(engineInstance, imagePath);
-            String documentType = extractor.detectDocumentType(text);
-            Map<String, String> fields = extractor.extract(documentType, text);
-            return new OcrExecutionResult(text, documentType, fields);
-        }
+        Object engineInstance = engineHolder.get();
+        String text = runOcr(engineInstance, imagePath);
+        String documentType = extractor.detectDocumentType(text);
+        Map<String, String> fields = extractor.extract(documentType, text);
+        return new OcrExecutionResult(text, documentType, fields, null);
     }
 
-    private Object getEngine() {
-        if (engine != null) {
-            return engine;
-        }
+    private Object createEngine() {
         try {
-            Class<?> modelClass = Class.forName("io.github.mymonstercat.Model");
-            Object model = Enum.valueOf((Class<Enum>) modelClass.asSubclass(Enum.class), "ONNX_PPOCR_V3");
-            Class<?> engineClass = Class.forName("io.github.mymonstercat.ocr.InferenceEngine");
-            Method getInstance = engineClass.getMethod("getInstance", modelClass);
-            engine = getInstance.invoke(null, model);
-            return engine;
+            return getInstanceMethod.invoke(null, model);
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to initialize RapidOCR engine", ex);
         }

@@ -39,13 +39,24 @@ public class OcrController {
     }
 
     @PostMapping(value = "/sync", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public OcrTaskDetailResponse sync(@RequestParam("file") MultipartFile file) {
-        return ocrTaskService.createSyncTask(file);
+    public OcrTaskDetailResponse sync(
+        @RequestParam("file") MultipartFile file,
+        @RequestParam(name = "engineType", defaultValue = "paddleocr-cpu") String engineType
+    ) {
+        return ocrTaskService.createSyncTask(file, engineType);
     }
 
     @PostMapping(value = "/async", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public OcrTaskDetailResponse async(@RequestParam("file") MultipartFile file) {
-        return ocrTaskService.createAsyncTask(file);
+    public OcrTaskDetailResponse async(
+        @RequestParam("file") MultipartFile file,
+        @RequestParam(name = "engineType", defaultValue = "paddleocr-cpu") String engineType
+    ) {
+        return ocrTaskService.createAsyncTask(file, engineType);
+    }
+
+    @PostMapping("/tasks/{taskNo}/cancel")
+    public OcrTaskDetailResponse cancel(@PathVariable String taskNo) {
+        return ocrTaskService.cancelTask(taskNo);
     }
 
     @GetMapping("/tasks")
